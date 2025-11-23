@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Cyberpunk Runner Tech Quiz</title>
+    <style>
+        body { margin: 0; font-family: monospace; background: #15191e; color: #e0e0e0;}
+        #gameCanvas { background: linear-gradient(#24303e 80%, #6afaff 100%); display: block; margin: auto; border: 2px solid #222; max-width: 100vw; max-height: 60vw;}
+        #ui { text-align: center; margin-top: 10px;}
+        #questionDiv {background: rgba(25,28,44,0.95); padding: 18px; border-radius: 12px;}
+        button {margin:6px; padding:8px 18px; font-size: 1.1em; border-radius:6px; border:0; background:#1ff5d2; color:#222;}
+        #endDiv, #gameOverDiv { display: none; }
+        @media (max-width: 600px) {
+            #gameCanvas { width: 100vw; height: 60vw;}
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="300"></canvas>
+    <div id="ui">
+        <div id="questionDiv"></div>
+        <div id="endDiv"></div>
+        <div id="gameOverDiv"></div>
+    </div>
+<script>
+const preguntas = [
+  {
+    pregunta: "¿Quién inventó la World Wide Web?",
+    opciones: ["Tim Berners-Lee", "Steve Jobs", "Bill Gates", "Alan Turing"],
+    respuesta: 0
+  },
+  {
+    pregunta: "¿Qué parte es el 'cerebro' de la computadora?",
+    opciones: ["RAM", "CPU", "Disco duro", "GPU"],
+    respuesta: 1
+  },
+  {
+    pregunta: "¿Cuál de estos es un sistema operativo?",
+    opciones: ["Google", "Windows", "HTTP", "HTML"],
+    respuesta: 1
+  },
+  {
+    pregunta: "¿Qué tipo de red cubre una ciudad entera?",
+    opciones: ["LAN", "MAN", "PAN", "WAN"],
+    respuesta: 1
+  },
+  // Agrega al menos 16 más...
+];
+
+function shuffle(arr) { for(let i=arr.length-1; i>0; i--){ const j = Math.floor(Math.random()*(i+1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; }
+let preguntasRandom = shuffle([...preguntas, ...preguntas, ...preguntas]).slice(0, 20); // Si quieres 20 únicas, añade más a preguntas
+let preguntasRespondidas = [];
+let puntaje = 0, idxPregunta = 0, respuestasCorrectas = 0, respuestasIncorrectas = 0;
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Estado del juego
+let jugador = { x:80, y:230, vy:0, energia: false, velocidad:2, width: 30, height:50, color:'#1ff5d2', atrapado:false };
+let cyborg = { x:20, velocidad: 1.6, width:38, height:54, color:'#ed5bff' };
+let obstaculo = { x:860, width:28, height:40, color:'#ffed5b', activo:true };
+
+let jugando = true;
+let preguntaPendiente = false;
+let gameLoopId;
+let frames = 0;
+
+function resetObstaculo() {
+    obstaculo.x = 860 + Math.random()*120;
+    obstaculo.activo = true;
+}
+function hacerPregunta(extraMsg="") {
+    if(idxPregunta >= preguntasRandom.length){
+        terminarJuego();
+        return;
+    }
+    let q = preguntasRandom[idxPregunta];
+    let d = document.getElementById('questionDiv');
+    let html = "<strong>"+(extraMsg?extraMsg+"<br>":"")+"</strong>"+(idxPregunta+1)+"/"+preguntasRandom.length+"<br>";
+    html += "<b>"+q.pregunta+"</b><br>";
+    q.opciones.forEach((op,ix)=>{
+        html += "<button onclick='responder(" + ix + ")'>"+op+"</button>";
+    });
+    d.innerHTML = html;
+    preguntaPendiente = true;
+}
+function responder(ix) {
+    if(!preguntaPendiente) return;
+    let q = preguntasRandom[idxPregunta];
+    preguntasRespondidas.push({q:q.pregunta,correcta:q.opciones[q.respuesta],respondida:q.opciones[ix],bien:ix==q.respuesta});
+    if(ix===q.respuesta) {
+        puntaje++; respuestasCorrectas++;
+        if(jugador.atrapado) {
+            jugador.atrapado = false;
+            cyborg.x = jugador.x - 60;
+        } else {
+            jugador.energia = true;
+            jugador.velocidad = Math.min(jugador.velocidad+0.6,6.5);
+        }
+        hacerPregunta("¡Respuesta correcta! Energía extra ⚡");
+    } else {
+        respuestasIncorrectas++;
+        if(jugador.energia) {
+            jugador.energia = false;
+            jugador.velocidad = 2.2;
+            hacerPregunta("Respuesta incorrecta. Pierdes energía.");
+        } else {
+            jugador.velocidad = Math.max(jugador.velocidad-0.7,1);
+            cyborg.x += 16;
+            if(jugador.velocidad === 1) { // mínimo, casi atrapado
+                hacerPregunta("¡Cuidado! Estás al mínimo de velocidad.");
+            } else {
+                hacerPregunta("Respuesta incorrecta. Cyborg se acerca.");
+            }
+        }
+    }
+    idxPregunta++;
+    setTimeout(()=>{document.getElementById('questionDiv').innerHTML=""; preguntaPendiente=false;}, 1500);
+}
+// Dibujo y Lógica
+function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // FONDO
+    ctx.fillStyle='#1a2226';
+    ctx.fillRect(0,260,800,80);
+    // Edificios
+    for(let i=0;i<10;i++){
+        ctx.fillStyle = ["#24dccf","#4b28d7","#14091b"][i%3];
+        ctx.fillRect(i*90,170,60,80-Math.random()*20);
+    }
+    // Obstáculo
+    if(obstaculo.activo) {
+        ctx.fillStyle=obstaculo.color;
+        ctx.fillRect(obstaculo.x, 230, obstaculo.width, obstaculo.height);
+    }
+    // Cyborg perseguidor
+    ctx.fillStyle=cyborg.color;
+    ctx.fillRect(cyborg.x,230,cyborg.width,cyborg.height);
+    ctx.fillStyle="#fff";
+    ctx.font = "16px monospace";
+    ctx.fillText("🤖",cyborg.x+5,255);
+    // Personaje
+    ctx.fillStyle=jugador.color;
+    ctx.fillRect(jugador.x, jugador.y, jugador.width, jugador.height);
+    ctx.fillText("🏃",jugador.x+5,jugador.y+32);
+    // Barras de estado
+    ctx.fillStyle="#1ff5d2";
+    ctx.fillRect(18,15,Math.max(0,(jugador.velocidad-1)*40),10);
+    ctx.fillStyle="#ed5bff";
+    ctx.fillRect(18,30,(respuestasIncorrectas*30),10);
+    ctx.strokeStyle="#aaa";
+    ctx.strokeRect(18,15,220,10); // velocidad max 6.5 aprox
+    ctx.strokeRect(18,30,180,10); // errores visual
+    // Pregunta activa
+    ctx.font = "14px monospace";
+    ctx.fillText("Velocidad: "+jugador.velocidad.toFixed(2), 300,20);
+    ctx.fillText("Preguntas: "+(idxPregunta)+"/"+preguntasRandom.length, 600,20);
+}
+function actualizarFisica() {
+    if(!jugando) return;
+    if(jugador.atrapado) return;
+    frames++;
+    // Obstaculo movimiento
+    if(obstaculo.activo) obstaculo.x -= jugador.velocidad+1.5;
+    if(obstaculo.x < jugador.x + jugador.width && obstaculo.x+obstaculo.width > jugador.x &&
+        obstaculo.x > jugador.x && jugador.y+jugador.height > 230)
+    {
+        obstaculo.activo=false;
+        hacerPregunta("¡Obstáculo! Responde para esquivar:");
+        return;
+    }
+    if(obstaculo.x < -50) resetObstaculo();
+    // Cyborg
+    if (cyborg.x < jugador.x - 24) cyborg.x += cyborg.velocidad;
+    else if(cyborg.x + cyborg.width > jugador.x) {
+        jugador.atrapado=true;
+        document.getElementById('questionDiv').innerHTML =
+        "<b>¡El cyborg te atrapó!</b><br>Si contestas bien, ¡escapas! o pierdes el juego.<br>";
+        let q = preguntasRandom[(idxPregunta++)%preguntasRandom.length];
+        let html = "<b>"+q.pregunta+"</b><br>";
+        q.opciones.forEach((op,ix)=>{
+            html += "<button onclick='rescate(" + ix + ","+q.respuesta+")'>"+op+"</button>";
+        });
+        document.getElementById('questionDiv').innerHTML += html;
+    }
+}
+function rescate(ix,resp) {
+    if(ix===resp) {
+        jugador.atrapado = false;
+        jugador.velocidad = 2.3;
+        cyborg.x=jugador.x - 50;
+        document.getElementById('questionDiv').innerHTML = "<b>¡Escapaste por poco!</b>";
+        setTimeout(()=>{document.getElementById('questionDiv').innerHTML=""; preguntaPendiente=false;}, 1200);
+    } else {
+        gameOver();
+    }
+}
+function gameOver() {
+    jugando = false;
+    document.getElementById('gameOverDiv').style.display='block';
+    document.getElementById('gameOverDiv').innerHTML = "<h2>GAME OVER</h2><button onclick='location.reload()'>Volver a inicio</button>";
+}
+function terminarJuego() {
+    jugando = false;
+    document.getElementById('endDiv').style.display='block';
+    let pOK = preguntasRespondidas.filter(x=>x.bien).length;
+    let incorrectas = preguntasRespondidas.filter(x=>!x.bien);
+    let summary = "<h3>¡Salvaste el mundo!</h3>";
+    summary += "<video src='https://upload.wikimedia.org/wikipedia/commons/transcoded/1/13/Cyberpunk_Neon_Night_Drive.mp4/Cyberpunk_Neon_Night_Drive.mp4.240p.webm' width='70%' autoplay muted loop></video>";
+    summary += "<p>Porcentaje preguntas correctas: "+((pOK/preguntasRespondidas.length)*100).toFixed(1)+"%</p>";
+    summary += "<p>Preguntas incorrectas:<ul>";
+    incorrectas.forEach(x=>{
+        summary += "<li>"+x.q+" <small>(tu respuesta: "+x.respondida+")</small></li>";
+    });
+    summary += "</ul><button onclick='location.reload()'>Volver a inicio</button>";
+    document.getElementById('endDiv').innerHTML = summary;
+}
+function loop() {
+    if (jugando && !preguntaPendiente && !jugador.atrapado) {
+        actualizarFisica();
+        draw();
+    }
+    if(jugando) gameLoopId = requestAnimationFrame(loop);
+}
+resetObstaculo();
+hacerPregunta();
+loop();
+</script>
+</body>
+</html>
